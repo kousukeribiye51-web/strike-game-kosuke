@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Strike Battle Online (Room Match)</title>
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <style>
+        :root {
+            --primary: #6366f1;
+            --strike: #ef4444;
+            --ball: #3b82f6;
+            --bg-start: #f1f5f9;
+            --bg-end: #e2e8f0;
+            --enemy: #f59e0b;
+            --text-main: #334155;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: linear-gradient(135deg, var(--bg-start) 0%, var(--bg-end) 100%);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 15px;
+            margin: 0;
+            color: var(--text-main);
+            box-sizing: border-box;
+        }
+
+        *, *:before, *:after { box-sizing: inherit; }
+
+        .app-container {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 30px 20px;
+            border-radius: 24px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            width: 100%;
+            max-width: 450px;
+            text-align: center;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.5);
+        }
+
+        h2 { margin-top: 0; margin-bottom: 20px; color: var(--primary); font-size: 1.6rem; font-weight: 800; }
+        .status-badge { padding: 6px 12px; border-radius: 20px; font-size: 0.8rem; margin-bottom: 15px; display: inline-block; font-weight: 600; }
+        .online { background: #dcfce7; color: #166534; }
+        .offline { background: #fee2e2; color: #991b1b; }
+
+        .connection-area { background: #f8fafc; padding: 15px; border-radius: 16px; margin-bottom: 20px; font-size: 0.9rem; border: 1px solid #e2e8f0; }
+        .setup-area { background: #f0f4ff; padding: 20px; border-radius: 20px; margin-bottom: 25px; border: 1px solid #e0e7ff; }
+        .turn-indicator { font-size: 1.2rem; font-weight: 800; margin: 15px 0; padding: 10px; border-radius: 12px; text-transform: uppercase; letter-spacing: 1px; }
+        .your-turn { background: var(--primary); color: white; }
+        .enemy-turn { background: #e2e8f0; color: #64748b; }
+        .answer-box { background: #fffbeb; border: 2px solid #f59e0b; padding: 12px; border-radius: 16px; margin-bottom: 15px; }
+        #myAnswerDisplay { display: block; font-size: 3rem; font-weight: 900; color: #f59e0b; font-family: monospace; }
+
+        .input-group { display: flex; flex-direction: row; gap: 10px; margin-bottom: 15px; }
+        .btn-group { display: flex; gap: 10px; margin-top: 10px; }
+        .btn-group button { flex: 1; }
+
+        input[type="text"] {
+            flex: 1; min-width: 0; padding: 12px; font-size: 1.5rem; font-weight: 700; text-align: center;
+            border: 3px solid #e2e8f0; border-radius: 16px; outline: none; background: white;
+        }
+        
+        /* ★【修正】文字がはみ出さないよう、未入力時のプレースホルダーの文字サイズを小さく調整 */
+        input#setMyNumberInput::placeholder, input#guessInput::placeholder {
+            font-size: 1.1rem;
+            letter-spacing: 0px;
+        }
+        input#guessInput, input#setMyNumberInput { font-size: 2rem; font-family: monospace; letter-spacing: 6px; }
+        input[type="text"]:focus { border-color: var(--primary); }
+
+        button { padding: 12px 24px; font-weight: bold; background: var(--primary); color: white; border: none; border-radius: 16px; cursor: pointer; font-size: 1rem; white-space: nowrap; }
+        button:hover { background: #4f46e5; }
+        button:disabled { background: #cbd5e1; cursor: not-allowed; }
+        .btn-secondary { background: #10b981; }
+        .btn-secondary:hover { background: #059669; }
+        .btn-rematch { background: #f59e0b; font-size: 1.2rem; padding: 15px; width: 100%; margin-top: 15px; box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3); }
+        .btn-rematch:hover { background: #d97706; }
+
+        @media (max-width: 400px) {
+            .input-group, .btn-group { flex-direction: column; }
+            button, input[type="text"] { width: 100%; }
+        }
+
+        .force-btn { background: #94a3b8; font-size: 0.8rem; padding: 10px 15px; margin-top: 10px; width: 100%; border-radius: 10px; color: white; border:none; cursor: pointer;}
+        .log { max-height: 200px; overflow-y: auto; border-top: 2px solid #e2e8f0; margin-top: 20px; padding-top: 10px; }
+        .log-item { display: flex; justify-content: space-between; align-items: center; padding: 10px; border-bottom: 1px solid #f1f5f9; font-size: 0.9rem; }
+        .log-item strong { font-size: 1.1rem; font-family: monospace; }
+        .badge { padding: 4px 8px; border-radius: 6px; color: white; font-size: 0.75rem; font-weight: bold; margin-left: 4px; display: inline-block; }
+        .bg-strike { background: var(--strike); }
+        .bg-ball { background: var(--ball); }
+        .tag { font-size: 0.65rem; padding: 3px 6px; border-radius: 5px; margin-right: 6px; color: white; font-weight: bold; }
+        .tag-me { background: var(--primary); }
+    </style>
+</head>
+<body>
+
+<div class="app-container">
+    <h2>Strike Battle Online</h2>
+    
+    <!-- 部屋作成・入室エリア -->
+    <div id="connectionArea" class="connection-area">
+        <p style="margin-top:0; font-weight:bold;">お互いに同じ「部屋名」を入力してください</p>
+        <input type="text" id="roomNameInput" placeholder="例: room123 (半角英数字)" style="margin-bottom:15px; font-size:1.2rem;">
+        
+        <div class="btn-group">
+            <button onclick="startAsHost()">① 部屋を作る (先攻)</button>
+            <button onclick="startAsGuest()" class="btn-secondary">② 部屋に入る (後攻)</button>
+        </div>
+    </div>
+
+    <div id="status" class="status-badge offline">未接続</div>
+
+    <!-- 数字設定フェーズ -->
+    <div id="setupArea" class="setup-area" style="display:none;">
+        <p><strong>自分の数字（4桁）を決めてください</strong></p>
+        <div class="input-group">
+            <input type="text" id="setMyNumberInput" inputmode="numeric" placeholder="1〜9の重複なし4桁" maxlength="4">
+            <button onclick="confirmMyNumber()">決定</button>
+        </div>
+        <p id="setupStatus" style="font-size: 0.85rem; color: #64748b; margin-bottom: 0; margin-top: 10px;">1〜9の数字を入力してください</p>
+    </div>
+
+    <!-- ゲーム本編 -->
+    <div id="gameArea" style="display:none;">
+        <div class="answer-box">
+            <span>Your number</span>
+            <strong id="myAnswerDisplay">----</strong>
+        </div>
+
+        <div id="turnBox" class="turn-indicator">wait...</div>
+
+        <div class="input-group" id="actionGroup">
+            <!-- ★【修正】こちらのプレースホルダーも分かりやすく変更 -->
+            <input type="text" id="guessInput" inputmode="numeric" placeholder="予想を入力" maxlength="4">
+            <button onclick="makeGuess()" id="guessBtn">go!</button>
+        </div>
+
+        <!-- 連戦用リマッチボタン -->
+        <button id="rematchBtn" class="btn-rematch" onclick="requestRematch()" style="display:none;">
+            もう一回遊ぶ (リマッチ)
+        </button>
+
+        <button id="forceTurnBtn" class="force-btn" onclick="forceMyTurn()">
+            お互い「相手のターン」で進まない場合はここを押す
+        </button>
+
+        <div class="log" id="gameLog"></div>
+    </div>
+</div>
+
+<script>
+    let peer;
+    let conn;
+    let myAnswer = [];
+    let isMyTurn = false;
+    let enemyReady = false;
+    let iAmReady = false;
+    let isGuestRole = false; 
+    const digitLength = 4;
+
+    function startAsHost() {
+        const roomName = document.getElementById('roomNameInput').value.trim();
+        if (!roomName) { alert("部屋名を入力してください"); return; }
+        document.getElementById('connectionArea').style.display = "none";
+        document.getElementById('status').innerText = "部屋を作成中...";
+        peer = new Peer(roomName);
+        peer.on('open', (id) => { document.getElementById('status').innerText = `部屋「${id}」で待機中...`; });
+        peer.on('connection', (c) => {
+            if (conn) return;
+            conn = c;
+            isGuestRole = false;
+            setupChat(isGuestRole);
+            alert("対戦相手が参加しました！自分の数字を決めてください。");
+        });
+        peer.on('error', (err) => {
+            if (err.type === 'unavailable-id') { alert("その部屋名は既に使われています。別の名前を試してください。"); }
+            else { alert("エラーが発生しました: " + err.type); }
+            location.reload();
+        });
+    }
+
+    function startAsGuest() {
+        const roomName = document.getElementById('roomNameInput').value.trim();
+        if (!roomName) { alert("部屋名を入力してください"); return; }
+        document.getElementById('connectionArea').style.display = "none";
+        document.getElementById('status').innerText = "部屋に接続中...";
+        peer = new Peer();
+        peer.on('open', () => {
+            conn = peer.connect(roomName);
+            isGuestRole = true;
+            setupChat(isGuestRole);
+        });
+        peer.on('error', (err) => {
+            alert("接続エラーが発生しました。部屋名が正しいか確認してください。");
+            location.reload();
+        });
+    }
+
+    function setupChat(isGuest) {
+        conn.on('open', () => {
+            document.getElementById('status').innerText = "対戦中";
+            document.getElementById('status').className = "status-badge online";
+            document.getElementById('setupArea').style.display = "block";
+            isMyTurn = !isGuest; 
+        });
+
+        conn.on('data', (data) => {
+            if (data.type === 'ready') { enemyReady = true; checkStartGame(); }
+            else if (data.type === 'guess') { handleEnemyGuess(data.val); }
+            else if (data.type === 'result') { handleResult(data); }
+            else if (data.type === 'game-over') { handleGameOverSignal(data.answer); }
+            else if (data.type === 'final-answer') { handleFinalAnswer(data.answer); }
+            else if (data.type === 'rematch-request') { handleRematchRequest(); }
+            else if (data.type === 'rematch-accept') { handleRematchAccept(); }
+        });
+
+        conn.on('close', () => { alert("対戦相手との接続が切れました。"); location.reload(); });
+        peer.on('disconnected', () => { alert("ネットワーク接続が切れました。"); location.reload(); });
+    }
+
+    // 自分の数字決定
+    function confirmMyNumber() {
+        const input = document.getElementById('setMyNumberInput');
+        const val = input.value.trim();
+        
+        if (val.length !== digitLength || new Set(val.split('')).size !== digitLength || isNaN(val)) {
+            alert("重複のない4桁の数字を入力してください"); return;
+        }
+        if (val.includes('0')) {
+            alert("0を使うことはできません。1〜9の数字で入力してください。"); return;
+        }
+
+        myAnswer = val.split('').map(Number);
+        document.getElementById('myAnswerDisplay').innerText = val;
+        iAmReady = true;
+        conn.send({ type: 'ready' });
+        input.disabled = true;
+        document.getElementById('setupStatus').innerText = "自分の準備完了！相手を待っています...";
+        checkStartGame();
+    }
+
+    function checkStartGame() {
+        if (iAmReady && enemyReady) {
+            document.getElementById('setupArea').style.display = "none";
+            document.getElementById('gameArea').style.display = "block";
+            document.getElementById('actionGroup').style.display = "flex"; 
+            document.getElementById('rematchBtn').style.display = "none";  
+            updateTurnUI();
+        }
+    }
+
+    function updateTurnUI() {
+        const box = document.getElementById('turnBox');
+        const btn = document.getElementById('guessBtn');
+        const input = document.getElementById('guessInput');
+        if (isMyTurn) {
+            box.innerText = "your turn"; box.className = "turn-indicator your-turn"; btn.disabled = false; input.disabled = false;
+        } else {
+            box.innerText = "enemy’s turn"; box.className = "turn-indicator enemy-turn"; btn.disabled = true; input.disabled = true;
+        }
+    }
+
+    function forceMyTurn() { isMyTurn = true; updateTurnUI(); }
+
+    // 予想を入力した時の処理
+    function makeGuess() {
+        const input = document.getElementById('guessInput');
+        const val = input.value.trim();
+        
+        if (val.length !== digitLength || isNaN(val)) { 
+            alert(digitLength + "桁の数字を入力してください"); return; 
+        }
+        
+        if (new Set(val.split('')).size !== digitLength) {
+            alert("同じ数字を2回以上使うことはできません。重複のない4桁にしてください。"); return;
+        }
+
+        if (val.includes('0')) {
+            alert("0を使うことはできません。1〜9の数字で予想してください。"); return;
+        }
+
+        conn.send({ type: 'guess', val: val });
+        isMyTurn = false; updateTurnUI(); input.value = "";
+    }
+
+    // 相手が予想してきたときの処理（★相手の予想結果は画面に表示せず、計算して送り返すだけに修正）
+    function handleEnemyGuess(enemyVal) {
+        const guess = enemyVal.split('').map(Number);
+        let s = 0, b = 0;
+        for (let i = 0; i < digitLength; i++) {
+            if (guess[i] === myAnswer[i]) s++;
+            else if (myAnswer.includes(guess[i])) b++;
+        }
+        
+        if (s === digitLength) {
+            conn.send({ type: 'result', val: enemyVal, s: s, b: b });
+            conn.send({ type: 'game-over', answer: myAnswer.join('') });
+        } else {
+            conn.send({ type: 'result', val: enemyVal, s: s, b: b });
+            isMyTurn = true;
+            updateTurnUI();
+        }
+    }
+
+    // ★自分の予想に対するログ結果が返ってきたときだけ画面に表示する
+    function handleResult(data) {
+        displayLog(data.val, data.s, data.b);
+    }
+
+    // 自分が当てて勝った時に届く通知
+    function handleGameOverSignal(enemyAnswer) {
+        setTimeout(() => {
+            alert("You win！！ （相手の数字は " + enemyAnswer + " でした）");
+            endGameSequence();
+            conn.send({ type: 'final-answer', answer: myAnswer.join('') });
+        }, 500);
+    }
+
+    // 負けた側に、勝者の本当の答えが届く処理
+    function handleFinalAnswer(realEnemyAnswer) {
+        setTimeout(() => {
+            alert("You lose！ 相手に数字を当てられました。（相手の正解は「" + realEnemyAnswer + "」でした）");
+            endGameSequence();
+        }, 500);
+    }
+
+    function endGameSequence() {
+        document.getElementById('actionGroup').style.display = "none"; 
+        document.getElementById('rematchBtn').style.display = "block"; 
+        document.getElementById('rematchBtn').disabled = false;
+        document.getElementById('rematchBtn').innerText = "もう一回遊ぶ (リマッチ)";
+        
+        const box = document.getElementById('turnBox');
+        box.innerText = "GAME OVER";
+        box.className = "turn-indicator enemy-turn";
+    }
+
+    // --- 連戦同期処理 ---
+    function requestRematch() {
+        document.getElementById('rematchBtn').disabled = true;
+        document.getElementById('rematchBtn').innerText = "相手の返答を待っています...";
+        conn.send({ type: 'rematch-request' });
+    }
+
+    function handleRematchRequest() {
+        conn.send({ type: 'rematch-accept' });
+        setTimeout(() => {
+            alert("対戦相手からリマッチの申請が届きました！2回戦目を開始します。");
+            resetGameForNextRound();
+        }, 100);
+    }
+
+    function handleRematchAccept() {
+        resetGameForNextRound();
+    }
+
+    function resetGameForNextRound() {
+        myAnswer = [];
+        enemyReady = false;
+        iAmReady = false;
+        isMyTurn = !isGuestRole;
+
+        document.getElementById('myAnswerDisplay').innerText = "----";
+        document.getElementById('gameLog').innerHTML = ""; 
+        document.getElementById('guessInput').value = "";
+        
+        const setInput = document.getElementById('setMyNumberInput');
+        setInput.value = "";
+        setInput.disabled = false;
+        document.getElementById('setupStatus').innerText = "1〜9の数字を入力してください";
+        
+        document.getElementById('gameArea').style.display = "none";
+        document.getElementById('setupArea').style.display = "block";
+    }
+
+    // ★自分が質問した結果だけをきれいに残すようにログ表示をシンプル化
+    function displayLog(guess, s, b) {
+        const log = document.getElementById('gameLog');
+        const item = document.createElement('div');
+        item.className = 'log-item';
+        item.innerHTML = `<div><span class="tag tag-me">YOU</span><strong>${guess}</strong></div><div><span class="badge bg-strike">${s} S</span><span class="badge bg-ball">${b} B</span></div>`;
+        log.prepend(item);
+    }
+</script>
+</body>
+</html>
